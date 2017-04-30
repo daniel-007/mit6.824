@@ -68,6 +68,7 @@ func doMap(
 
 	kvs := mapF(inFile, content)
 
+	j := 0
 	for _, keyValue := range kvs {
 		key := keyValue.Key
 
@@ -79,6 +80,8 @@ func doMap(
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		j++
 	}
 
 	for _, file := range files {

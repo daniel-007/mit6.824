@@ -1,14 +1,22 @@
 package mapreduce
 
+import (
+	"encoding/json"
+	"os"
+	"log"
+)
+
+type KeyValues map[string][]string
+
 // doReduce manages one reduce task: it reads the intermediate
 // key/value pairs (produced by the map phase) for this task, sorts the
 // intermediate key/value pairs by key, calls the user-defined reduce function
 // (reduceF) for each key, and writes the output to disk.
 func doReduce(
-	jobName string, // the name of the whole MapReduce job
+	jobName string,       // the name of the whole MapReduce job
 	reduceTaskNumber int, // which reduce task this is
-	outFile string, // write the output here
-	nMap int, // the number of map tasks that were run ("M" in the paper)
+	outFile string,       // write the output here
+	nMap int,             // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
 	//
@@ -43,4 +51,56 @@ func doReduce(
 	// }
 	// file.Close()
 	//
+	var keyValues = KeyValues{}
+
+	for mapTaskNumber := 0; mapTaskNumber < nMap; mapTaskNumber++ {
+		mapFileName := reduceName(jobName, mapTaskNumber, reduceTaskNumber)
+
+		file, err := os.Open(mapFileName)
+
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		decoder := json.NewDecoder(file)
+
+		var kv KeyValue = KeyValue{}
+
+		for decoder.More() {
+			err = decoder.Decode(&kv)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			if keyValues[kv.Key] == nil {
+				values := []string{}
+				values = append(values, kv.Value)
+				keyValues[kv.Key] = values
+			} else {
+				values := keyValues[kv.Key]
+				values = append(values, kv.Value)
+				keyValues[kv.Key] = values
+			}
+		}
+	}
+
+	out, err := os.Create(outFile)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	encoder := json.NewEncoder(out)
+
+	for key, values := range keyValues {
+		reduceResult := reduceF(key, values)
+		kv := KeyValue{key, reduceResult}
+		err = encoder.Encode(kv)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+	}
+	out.Close()
 }
