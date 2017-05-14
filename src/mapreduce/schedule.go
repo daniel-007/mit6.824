@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (Map
@@ -29,8 +32,58 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// them have been completed successfully should the function return.
 	// Remember that workers may fail, and that any given worker may finish
 	// multiple tasks.
-	//
-	// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-	//
+
+	switch phase {
+	case mapPhase:
+		var wg sync.WaitGroup
+		for taskNumber, file := range mapFiles {
+			wg.Add(1)
+			go func(file string, n_other int, taskNumber int) {
+				defer wg.Done()
+				workerUrl := <-registerChan
+
+				doTaskArgs := DoTaskArgs{
+					File:          file,
+					JobName:       jobName,
+					Phase:         mapPhase,
+					NumOtherPhase: n_other,
+					TaskNumber:    taskNumber,
+				}
+
+				call(workerUrl, "Worker.DoTask", doTaskArgs, nil)
+
+				/* worker 完成工作后，将 workerUrl 放回 channel 中，可以给下一个 */
+				go func() {
+					registerChan <- workerUrl
+				}()
+			}(file, n_other, taskNumber)
+		}
+		wg.Wait()
+
+	case reducePhase:
+		var wg sync.WaitGroup
+		for i := 0; i < nReduce; i++ {
+			wg.Add(1)
+			go func(taskNumber int) {
+				defer wg.Done()
+				workerUrl := <-registerChan
+				doTaskArgs := DoTaskArgs{
+					File:          "",
+					JobName:       jobName,
+					Phase:         reducePhase,
+					NumOtherPhase: n_other,
+					TaskNumber:    taskNumber,
+				}
+
+				call(workerUrl, "Worker.DoTask", doTaskArgs, nil)
+
+				go func() {
+					registerChan <- workerUrl
+				}()
+			}(i)
+		}
+		wg.Wait()
+	}
+
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
