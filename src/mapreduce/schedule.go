@@ -50,12 +50,19 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 					TaskNumber:    taskNumber,
 				}
 
-				call(workerUrl, "Worker.DoTask", doTaskArgs, nil)
+				isOk := false
+				for !isOk {
+					isOk = call(workerUrl, "Worker.DoTask", doTaskArgs, nil)
+					if isOk {
+						/* worker 完成工作后，将 workerUrl 放回 channel 中，可以给下一个 */
+						go func() {
+							registerChan <- workerUrl
+						}()
+					} else {
+						workerUrl = <- registerChan
+					}
+				}
 
-				/* worker 完成工作后，将 workerUrl 放回 channel 中，可以给下一个 */
-				go func() {
-					registerChan <- workerUrl
-				}()
 			}(file, n_other, taskNumber)
 		}
 		wg.Wait()
@@ -75,11 +82,18 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 					TaskNumber:    taskNumber,
 				}
 
-				call(workerUrl, "Worker.DoTask", doTaskArgs, nil)
-
-				go func() {
-					registerChan <- workerUrl
-				}()
+				isOk := false
+				for isOk != true {
+					isOk = call(workerUrl, "Worker.DoTask", doTaskArgs, nil)
+					if isOk {
+						go func() {
+							registerChan <- workerUrl
+						}()
+					} else {
+						workerUrl = <- registerChan
+						fmt.Printf("%v, %v", isOk, workerUrl)
+					}
+				}
 			}(i)
 		}
 		wg.Wait()
